@@ -1,605 +1,547 @@
 /**
- * @fileOverview 坐标轴的基类
+ * @fileOverview 所有数据序列的基类
  * @ignore
  */
 
-define('bui/chart/baseaxis',['bui/common','bui/graphic','bui/chart/abstractaxis'],function(require) {
+define('bui/chart/baseseries',['bui/chart/plotitem','bui/chart/showlabels','bui/chart/markers','bui/chart/actived'],function (require) {
+  
+  var BUI = require('bui/common'),
+    Item = require('bui/chart/plotitem'),
+    ShowLabels = require('bui/chart/showlabels'),
+    Actived = require('bui/chart/actived'),
+    Markers = require('bui/chart/markers');
 
-    var BUI = require('bui/common'),
-        Abstract = require('bui/chart/abstractaxis'),
-        Util = require('bui/graphic').Util,
-        CLS_AXIS = 'x-chart-axis';
+  /**
+   * @class BUI.Chart.Series
+   * 数据序列的基类，是一个抽象类，不能直接实例化
+   */
+  var Series = function(cfg){
+    Series.superclass.constructor.call(this,cfg);
+  };
 
-    //是否在2个数之间
-    function isBetween(x,x1,x2){
-        if(x1 > x2){
-            var temp = x2;
-            x2 = x1;
-            x1 = temp;
-        }
-        return x >= x1 && x <= x2;
-    }
+  BUI.extend(Series,Item);
 
+  BUI.mixin(Series,[ShowLabels,Actived]);
+
+  Series.ATTRS = {
+    zIndex : {
+      value : 5
+    },
     /**
-     * @class BUI.Chart.Axis
-     * 坐标轴
-     * @extends BUI.Chart.Axis.Abstract
+     * 标志数据序列上的点的配置
+     *
+     *  - type 默认类型是path,可以是任意基本图形
+     * @type {Object}
      */
-    function Axis(cfg){
-        Axis.superclass.constructor.call(this,cfg);
+    markers : {
+
+    },
+    /**
+     * 显示对应点的文本的配置项
+     * @type {BUI.Chart.Labels}
+     */
+    labels : {
+
+    },
+    /**
+     * 创建序列时是否触发动画
+     * @type {Boolean}
+     */
+    animate : {
+      value : false
+    },
+    /**
+     * 生成时动画的时间间隔
+     * @type {Number}
+     */
+    duration : {
+      value : 1000
+    },
+    /**
+     * 发生改变的动画时间
+     * @type {Number}
+     */
+    changeDuration : {
+      value : 400
+    },
+    /**
+     * 是否显示在图例中
+     * @type {Boolean}
+     */
+    inLegend : {
+      value : true
+    },
+    /**
+     * 显示的数据
+     * @type {Array}
+     */
+    data : {
+      value : [],
+      shared : false
+    },
+    /**
+     * 渲染时就绘制图形
+     * @type {Boolean}
+     */
+    autoPaint : {
+      value : true
+    },
+    /**
+     * 鼠标移动到数据序列图中是否触发事件
+     * @type {Boolean}
+     */
+    enableMouseTracking : {
+      value : true
+    },
+    /**
+     * 是否随着鼠标在画板上移动触发相应的事件
+     *
+     * - true ，则鼠标从序列图中移出时不会触发移出的事件，当鼠标在画板上移动时序列图会做出对应的动作
+     * 
+     * @type {Boolean}
+     */
+    stickyTracking : {
+      value : true
+    },
+    /**
+     * 用于定位数据的字段，通常是x轴上的数据，但是也可以用于饼图之类不需要x轴的数据序列
+     * @type {String}
+     */
+    xField : {
+      value : 'x'
+    },
+    /**
+     * 标示数据的值,通常用于y轴上的数据，但是也可以用于饼图、雷达图之类
+     * @type {String}
+     */
+    yField : {
+      value : 'y'
+    },
+    /**
+     * 活动子项的名称，用于组成 itemactived,itemunactived的事件
+     * @protected
+     * @type {String}
+     */
+    itemName : {
+      value : 'seriesItem'
+    },
+    /**
+     * 所属分组的名称,用于事件中标示父元素
+     * @protected
+     * @type {String}
+     */
+    groupName : {
+      value : 'series'
     }
 
-    Axis.ATTRS = {
-        zIndex : {
-            value : 4
-        },
-        /**
-         * 距离初始位置的x轴偏移量,仅对于左侧、右侧的纵向坐标有效
-         * @type {Number}
-         */
-        x : {
+  };
 
-        },
-        /**
-         * 距离初始位置的y轴偏移量，仅对顶部、底部的横向坐标轴有效
-         * @type {Number}
-         */
-        y : {
+  BUI.augment(Series,{
 
-        },
-        /**
-         * 起始点
-         * @type {Object}
-         */
-        start : {
+    renderUI : function(){
+      var _self = this;
+      
+      Series.superclass.renderUI.call(_self);
+      
+      _self.processColor();
+      _self.renderLabels();
+      _self.renderMarkers();
+      if(_self.get('autoPaint')){
+        _self.paint();
+      }
 
-        },
-        /**
-         * 终点
-         * @type {Object}
-         */
-        end : {
+    },
+    bindUI : function(){
+      var _self = this;
+      Series.superclass.bindUI.call(_self);
+      if(_self.get('enableMouseTracking')){
 
-        },
-        /**
-         * 起点终点的偏移量
-         * @type {Number}
-         */
-        tickOffset : {
-            value : 0
-        },
-        /**
-         * 附加的样式
-         * @type {String}
-         */
-        elCls : {
-            value : CLS_AXIS
-        },
-        /**
-         * 位置,此属性决定是横坐标还是纵坐标
-         *
-         * - top : 顶部的横向坐标轴
-         * - bottrom : 底部的横向坐标轴
-         * - left ：左侧纵向坐标轴
-         * - right : 右侧纵向坐标轴
-         * @type {String}
-         */
-        position : {
-            value : 'bottom'
-        },
-        /**
-         * 坐标轴线的配置信息,如果设置成null，则不显示轴线
-         * @type {Object}
-         */
-        line : {
-            value : {
-                'stroke-width' : 1,
-                'stroke' : '#C0D0E0'
-            }
-        },
-        /**
-         * 标注坐标线的配置
-         * @type {Object}
-         */
-        tickLine : {
-            value : {
-                'stroke-width' : 1,
-                'stroke' : '#C0D0E0',
-                value : 5
-            }
-        }
-       
-
-    };
-
-    BUI.extend(Axis,Abstract);
-
-
-    BUI.augment(Axis,{
-
-        //渲染控件前
-        beforeRenderUI : function(){
-            var _self = this,
-                plotRange;
-            Axis.superclass.beforeRenderUI.call(_self);
-            plotRange = _self.get('plotRange');
-
-            if(plotRange){
-                var start = plotRange.start,
-                    position = _self.get('position'),
-                    end = {};
-                if(_self.isVertical()){
-                    if(position == 'left'){
-                        end.y = plotRange.end.y;
-                        end.x = start.x; 
-                    }else{
-                        start = {};
-                        end = plotRange.end;
-                        start.x = plotRange.end.x;
-                        start.y = plotRange.start.y;
-                    }
-                    
-                }else{
-                    
-                    end.x = plotRange.end.x;
-                    end.y = start.y;
-                }
-                _self.set('start',start);
-                _self.set('end',end);
-            }
-
-            _self.set('indexCache',{});
-            _self.set('pointCache',[]);
-
-        },
-         /**
-         * 改变坐标轴
-         */
-        change : function(info){
-            var _self = this;
-            if(_self.isChange(info.ticks)){
-                _self._clearTicksInfo();
-                _self.changeInfo(info);
-                _self._processTicks(null,true);
-                _self._changeTicks();
-                _self._changeGrid();
-                _self.resetLabels();
-            }
-        },
-        /**
-         * 坐标轴是否将要发生改变
-         * @param  {Array}  ticks 新的坐标点
-         * @return {Boolean}  是否发生改变
-         */
-        isChange : function(ticks){
-          var _self = this,
-              preTicks = _self.get('ticks');
-
-          return  !BUI.Array.equals(ticks,preTicks);
-        },
-        /**
-         * @protected
-         * 更改信息
-         */
-        changeInfo : function(info){
-            var _self = this;
-
-            _self.set('ticks',info.ticks);
-        },
-        _clearTicksInfo : function(){
-            var _self = this,
-                grid = _self.get('grid'),
-                labels = _self.get('labels');
-
-            _self.set('pointCache',[]);
-            _self.set('indexCache',[]);
-            _self.set('tickItems',[]);
-
-            if(grid){
-                grid.items = [];
-            }
-
-            if(labels){
-                labels.items = [];
-            }
-
-        },
+        _self.onMouseOver();
+        var parent = _self.get('parent');
         
-        /**
-         * 绘制坐标轴
-         */
-        paint : function(){
-            var _self = this;
-            _self._drawLines();
-            _self._renderTicks();
-            _self._renderGrid(); 
-        },
-        /**
-         * 是否是纵坐标
-         */
-        isVertical : function(){
-            var _self = this,
-                isVertical = _self.get('isVertical'),
-                position;
-            if(isVertical != null){
-                return isVertical;
+        /**/_self.on('mouseover',function(){
+          if(parent.setActivedItem){
+            if(!parent.isItemActived(_self)){
+              parent.setActivedItem(_self);
             }
-            position = _self.get('position');
-            if(position == 'bottom' || position == 'top'){
-                isVertical = false;
-            }else{
-                isVertical = true;
-            }
-            
-            _self.set('isVertical',isVertical);
-            return isVertical;
-        },
-        /**
-         * 将指定的节点转换成对应的坐标点
-         * @param  {*} value 数据值或者分类 
-         * @return {Number} 节点坐标点（单一坐标）x轴的坐标点或者y轴的坐标点
-         */
-        getOffset : function(value){
-            var _self = this,
-                ticks = _self.get('ticks'),
-                index = BUI.Array.indexOf(value,ticks);
-
-            return _self.getOffsetByIndex(index);
-        },
-        /**
-         * 起点的坐标位置，也就是cavas上的点的位置
-         * @return {Number} 坐标点的位置
-         */
-        getStartOffset : function(){
-            return this._getStartCoord();
-        },
-        /**
-         * 终点的坐标位置，也就是cavas上的点的位置
-         * @return {Number} 坐标点的位置
-         */
-        getEndOffset : function(){
-            return this._getEndCoord();
-        },
-        /**
-         * 根据画板上的点获取坐标轴上的值，用于将cavas上的点的坐标转换成坐标轴上的坐标
-         * @param  {Number} offset 
-         * @return {Number} 点在坐标轴上的值
-         */
-        getValue : function(offset){
-            var _self = this,
-                startCoord = _self._getStartCoord(),
-                endCoord = _self._getEndCoord();
-
-            if(offset < startCoord || offset > endCoord){
-                return NaN;
-            }
-
-            return _self.parseOffsetValue(offset);
-        },
-        /**
-         * 获取坐标轴上起点代表的值
-         * @return {*} 起点代表的值
-         */
-        getStartValue : function(){
-            var _self = this,
-                ticks = _self.get('ticks');
-            return ticks[0];
-        },
-        /**
-         * 获取坐标轴终点代表的值
-         * @return {*} 终点代表的值
-         */
-        getEndValue : function(){
-            var _self = this,
-                ticks = _self.get('ticks');
-            return ticks[ticks.length - 1];
-        },
-
-        
-        getSnapIndex : function(offset){
-            var _self = this,
-                pointCache = _self.get('pointCache'),
-                snap = Util.snapTo(pointCache,offset);;
-            return BUI.Array.indexOf(snap,pointCache);
-        },
-        _appendEndOffset : function(offset){
-            var _self = this,
-                tickOffset = _self.get('tickOffset'),
-                directfactor;
-            if(tickOffset){
-                directfactor = _self._getDirectFactor();
-                if(offset == 0){
-                    offset = offset + tickOffset * directfactor;
-                }else if(offset > 0){
-                
-                    offset = offset + tickOffset;
-                }else{
-                    offset = offset - tickOffset;
-                }
-            }
-            return offset;
-        },
-        /**
-         * 将指定的节点转换成对应的坐标点
-         * @param  {Number} index 顺序 
-         * @return {Number} 节点坐标点（单一坐标）x轴的坐标点或者y轴的坐标点
-         */
-        getOffsetByIndex : function(index){
-            var _self = this,
-                length = _self._getLength(),
-                ticks = _self.get('ticks'),
-                count = ticks.length,
-                offset = (length / (count - 1)) * index;
-
-            return _self._appendEndOffset(offset) + _self._getStartCoord();
-        },
-        //获取坐标轴上的节点位置
-        getOffsetPoint : function(index,current){
-
-            var _self = this,
-                ortho = _self._getOrthoCoord(),
-                indexCache = _self.get('indexCache'); //根据索引获取值的缓存，防止重复计算
-
-            if(!current){
-                if(indexCache[index] !== undefined){
-                    current = indexCache[index];
-                }else{
-                    current = _self.getOffsetByIndex(index);
-                    indexCache[index] = current;
-                }
-                
-            }
-            
-            if(_self.isVertical()){
-                return {
-                    x : ortho,
-                    y : current
-                };
-            }
-
-            return {
-                x : current,
-                y : ortho
-            };
-
-        },
-        /**
-         * @protected
-         * 获取显示坐标点的位置
-         */
-        getTickOffsetPoint : function(index){
-            return this.getOffsetPoint(index);
-        },
-       
-        //获取坐标轴开始的点
-        _getStartCoord : function(){
-            var _self = this,
-                start = _self.get('start');
-            if(_self.isVertical()){
-                return start.y;
-            }else{
-                return start.x;
-            }
-        },
-        //获取平行于坐标轴的点
-        _getOrthoCoord : function(){
-            var _self = this,
-                start = _self.get('start');
-            if(_self.isVertical()){
-                return start.x;
-            }else{
-                return start.y;
-            }
-        },
-        //获取坐标轴结束的点
-        _getEndCoord : function(){
-            var _self = this,
-                end = _self.get('end');
-            if(_self.isVertical()){
-                return end.y;
-            }else{
-                return end.x;
-            }
-        },
-        //获取中间点的位置
-        _getMiddleCoord : function(){
-            var _self = this,
-                start = _self._getStartCoord(),
-                length = _self._getLength();
-            return start + _self._appendEndOffset(length/2);
-        },
-        /**
-         * 获取坐标轴的长度
-         * @return {Number} 坐标轴长度
-         */
-        getLength : function(){
-            return Math.abs(this._getLength());
-        },
-        /**
-         * 获取坐标点之间的长度
-         * @return {Number} 坐标点之间的宽度
-         */
-        getTickAvgLength : function(){
-            var _self = this,
-                ticks = _self.get('ticks');
-            return _self.getLength()/(ticks.length - 1);
-        },
-        //获取坐标轴内部的长度，不计算偏移量
-        _getLength : function(){
-            var _self = this,
-                start = _self.get('start'),
-                offset = _self.get('tickOffset'),
-                end = _self.get('end'),
-                length;
-            if(_self.isVertical()){
-                length = end.y - start.y;
-            }else{
-                length = end.x - start.x;
-            }
-            if(length > 0){
-                length = length - offset * 2;
-            }else{
-                length = length + offset * 2;
-            }
-            return length;
-        },
-        /**
-         * @protected
-         * 获取坐标轴的path
-         * @return {String|Array} path
-         */
-        getLinePath : function(){
-            var _self = this,
-                start = _self.get('start'),
-                end = _self.get('end'),
-                path = [];
-
-            path.push(['M',start.x,start.y]);
-            path.push(['L',end.x,end.y]);
-            return path;
-        },
-        getTickEnd : function(start){
-            var _self = this,
-                lineAttrs = _self.get('tickLine'),
-                factor = _self._getAlignFactor(),
-                value = lineAttrs.value,
-                rst = {};
-
-            if(_self.isVertical()){
-                rst.x2 = start.x1 + value * factor;
-                rst.y2 = start.y1;
-            }else {
-                rst.x2 = start.x1;
-                rst.y2 = start.y1 + value * factor;
-            }
-            return rst;
-        },
-        _changeTicks : function(){
-            var _self = this,
-                tickShape = _self.get('tickShape'),
-                tickItems = _self.get('tickItems'),
-                path = '';
-            if(!tickShape){
-                return;
-            }
-            BUI.each(tickItems,function(item){
-                var subPath = BUI.substitute('M{x1} {y1}L{x2} {y2}',item);
-                path += subPath;
-            });
-            Util.animPath(tickShape,path,2);
-        },
-
-        //获取方向的系数，坐标轴方向跟浏览器的方向是否一致
-        _getDirectFactor : function(){
-            var _self = this,
-                directfactor = _self.get('directfactor'),
-                position,
-                start,
-                end;
-            if(directfactor){
-                return directfactor;
-            }
-            directfactor = 1;
-            position = _self.get('position');
-            start = _self.get('start');
-            end = _self.get('end');
-            //判断方向是否与坐标系方向一致
-            if(position == 'bottom' || position == 'top'){
-                if(start.x > end.x){
-                    directfactor = -1;
-                }
-            }else{
-                if(start.y > end.y){
-                    directfactor = -1;
-                }
-            }
-
-            _self.set('directfactor',directfactor);
-            return directfactor;
-        },
-        //获取文本、坐标点线方向的因子
-        _getAlignFactor : function(){
-            var _self = this,
-                factor = _self.get('factor'),
-                position;
-            if(factor){
-                return factor;
-            }
-            position = _self.get('position');
-
-            if(position == 'bottom' || position == 'right'){
-                factor = 1;
-            }else{
-                factor = -1;
-            }
-            _self.set('factor',factor);
-            return factor;
-        },
-        //渲染标题
-        _renderTitle : function(){
-            var _self = this,
-                title = _self.get('title'),
-                middle = _self._getMiddleCoord(),
-                offsetPoint = _self.getOffsetPoint(null,middle),
-                cfg = BUI.mix({},title);
-            if(title.text){
-
-
-                cfg.x = offsetPoint.x + (title.x || 0);
-                cfg.y = offsetPoint.y + (title.y || 0);
-                _self.addShape({
-                    type : 'label',
-                    elCls : CLS_AXIS + '-title',
-                    attrs : cfg
-                });
-            }
-
-        },
-        /**
-         * 获取栅格项的配置信息，一般是起始点信息
-         * @protected
-         */
-        getGridItemCfg : function(offsetPoint){
-            var _self = this,
-                item = {},
-                plotRange = _self.get('plotRange');
-
-            item.x1 = offsetPoint.x;
-            item.y1 = offsetPoint.y;
-            if(_self.isVertical()){
-                item.y2 = item.y1;
-                item.x2 = plotRange.end.x;
-            }else{
-                item.x2 = item.x1;
-                item.y2 = plotRange.end.y;
-            }
-
-            return item;
-
-        },
-
-        _changeGrid : function(){
-            var _self = this,
-                grid = _self.get('grid'),
-                gridGroup;
-            if(!grid){
-                return;
-            }
-            gridGroup = _self.get('gridGroup');
-
-            gridGroup && gridGroup.change(grid.items);
-        },
-        //移除控件前移除对应的grid和labels
-        remove : function(){
-            
-            var _self = this,
-                gridGroup = _self.get('gridGroup'),
-                labelsGroup = _self.get('labelsGroup');
-            gridGroup && gridGroup.remove();
-            _self.removeLabels();
-            Axis.superclass.remove.call(this);
+          }
+        });
+      }
+      if(!_self.get('stickyTracking')){
+        _self.onMouseOut();
+      }
+    },
+    /**
+     * 更改数据
+     * @param  {Array} data 数据
+     */
+    changeData : function(data,redraw){
+      var _self = this,
+        preData = _self.get('data'),
+        parent = _self.get('parent');
+      if(data != preData){
+        _self.set('data',data);
+      }
+      if(redraw){
+        if(parent){
+          parent.repaint();
+        }else if(_self.get('visible')){
+          _self.repaint();
         }
-    });
+      }
+    },
+    /**
+     * 添加数据
+     * @param {*} point  数据
+     * @param {Boolean} shift  是否删除最前面的数据
+     * @param {Boolean} redraw 是否重绘图表
+     */
+    addPoint : function(point,shift,redraw){
+      var _self = this,
+        data = _self.get('data');
+      data.push(point);
+      
+      if(shift){
+        data.shift();
+        redraw && data.unshift(data[0]);
+      }
+      _self.changeData(data,redraw);
 
-    return Axis;
+      if(shift){
+        setTimeout(function(){
+          data.shift();
+          _self.set('points',null);
+          if(redraw){
+            _self.shiftPoint();
+            _self.changeShapes(_self.getPoints(),false);
+          }
+        },800);
+        
+      }
+    },
+    /**
+     * 删除第一个节点的操作
+     * @protected
+     */
+    shiftPoint : function(){
+      var _self = this,
+        markersGroup = _self.get('markersGroup'),
+        labelsGroup = _self.get('labelsGroup'),
+        xAxis = _self.get('xAxis'),
+        first;
+      if(markersGroup){
+        first =markersGroup.getChildAt(0);
+        first && first.remove();
+      }
+      if(labelsGroup){
+        first = labelsGroup.getChildAt(0);
+        first && first.remove();
+      }
+      if(xAxis){
+        var labels = xAxis.get('labelsGroup');
+        if(labels){
+          first = labels.getChildAt(0);
+          first && first.remove();
+        }
+      }/**/
+    },
+    /**
+     * 获取对应坐标轴上的数据
+     * @return {Array} 
+     */
+    getData : function(type){
+
+    },
+    /**
+     * @protected
+     * 鼠标进入事件
+     */
+    onMouseOver : function(ev){
+      
+    },
+    /**
+     * @protected
+     * 鼠标移出
+     */
+    onMouseOut : function(ev){
+
+    },
+    /**
+     * 鼠标在画布上移动
+     */
+    onStickyTracking : function(ev){
+
+    },
+    /**
+     * @protected
+     * 处理颜色
+     */
+    processColor : function(){
+
+    },
+    /**
+     * 获取鼠标移动与该series的焦点
+     */
+    getTrackingInfo : function(point){
+
+    },
+    /**
+     * 获取点的集合用于显示Marker和label
+     * @return {Array} 点的集合
+     */
+    getPoints : function(){
+      var _self = this,
+        points = _self.get('points');
+      if(!points){
+        points = _self._getPoints();
+        _self.set('points',points);
+      }
+      return points;
+    },
+    /**
+     * @private
+     * 获取点
+     */
+    _getPoints : function(){
+      var _self = this,
+        data = _self.get('data'),
+        xField = _self.get('xField'),
+        yField = _self.get('yField'),
+        points = [];
+      BUI.each(data,function(item,index){
+        var point;
+        if(BUI.isObject(item)){
+          var xValue = item[xField],
+            yValue = item[yField];
+          if(xValue == null){
+            point = _self.getPointByIndex(yValue,index);
+          }else{
+            point = _self.getPointByValue(xValue,yValue);
+          }
+          point.obj = item;
+        }else if(BUI.isArray(item)){
+          point = _self.getPointByValue(item[0],item[1]);
+          point.arr = item;
+        }else{
+          point = _self.getPointByIndex(item,index);
+        }
+        _self.processPoint(point,index);
+        points.push(point);
+      });
+
+      return points;
+    },
+    /**
+     * @protected
+     * 处理节点，并且添加附加信息
+     */
+    processPoint : function(point,index){
+
+    },
+    /**
+     * 根据对象获取值
+     * @protected
+     * @return {Object} 点的信息
+     */
+    getPointByObject : function(item){
+
+    },
+    /**
+     * 根据索引获取值
+     * @protected
+     * @return {Object} 点的信息
+     */
+    getPointByIndex : function(item,index){
+
+    },
+    /**
+     * @protected
+     * 根据指定的值获取点的信息
+     * @param  {Number} value 在基础轴上的值，一般是x轴
+     * @return {Object} 点的信息
+     */
+    getPointByValue : function(xValue,value){
+
+    },
+    /**
+     * 获取提示信息
+     * @return {*} 返回显示在上面的文本
+     */
+    getTipItem : function(point){
+      return point.value;
+    },
+    //根据x轴上的值获取y轴上的值
+    findPointByValue : function(value){
+      var _self = this,
+        points = _self.get('points'),
+        rst;
+
+      BUI.each(points,function(point){
+        if(_self.snapEqual(point.xValue,value) && point.value != null){
+          rst = point;
+          return false;
+        }
+      });
+
+      return rst;
+    },
+    /**
+     * @protected
+     * 判断是否近似相等
+     */
+    snapEqual : function(value1,value2){
+      return value1 == value2;
+    },
+    /**
+     * @protected
+     * 画对应的图形
+     */
+    draw : function(points){
+
+    },
+    /**
+     * 绘制数据序列
+     */
+    paint : function(){
+      var _self = this,
+        points = _self.getPoints();
+
+      if(_self.get('isPaint') || !_self.get('data').length){ //没有数据时不做渲染
+        return;
+      }
+      _self.set('painting',true);//正在绘制，防止再绘制过程中触发重绘
+      _self.draw(points,function(){
+        _self.sort();
+      });
+      _self.set('isPaint',true);
+      _self.set('painting',false);
+    },
+    /**
+     * 重绘
+     */
+    repaint : function(){
+      var _self = this,
+        labels = _self.get('labels'),
+        markers = _self.get('markers'),
+        points;
+
+      _self.set('points',null);
+      if(!_self.get('isPaint') && !_self.get('painting')){
+        _self.paint();
+        return;
+      }
+
+      
+      points = _self.getPoints();
+
+      if(labels){
+        labels.items = [];
+      }
+      if(markers){
+        markers.items = [];
+      }
+      _self.changeShapes(points);
+      BUI.each(points,function(point){
+        if(labels){
+          var item = {};
+          item.text = point.value;
+          item.x = point.x;
+          item.y = point.y;
+          labels.items.push(item);
+        }
+        if(markers){
+          markers.items.push(point);
+        }
+      });
+
+      _self._changeMarkers();
+      _self._changeLabels();
+    },
+    /**
+     * @protected
+     * 序列变化时改变内部图形
+     */
+    changeShapes : function(points){
+
+    },
+    /**
+     * @protected
+     * 添加marker配置项
+     */
+    addMarker : function(offset){
+      var _self = this,
+          markersGroup = _self.get('markersGroup'),
+          marker = {},
+          rst;
+      if(markersGroup){
+        marker.x = offset.x;
+        marker.y = offset.y;
+        if(offset.obj && offset.obj.marker){
+          BUI.mix(marker,offset.obj.marker);
+        }
+
+       rst = markersGroup.addMarker(marker);
+       rst.set('point',offset);
+      }
+      return rst;
+    },
+    //渲染标记
+    renderMarkers : function(){
+      var _self = this,
+        markers = _self.get('markers'),
+        markersGroup;
+      if(markers){
+        if(!markers){
+          markers.items = [];
+        }
+        markersGroup = _self.addGroup(Markers,markers);
+        _self.set('markersGroup',markersGroup);
+      }
+    },
+    _changeMarkers : function(){
+      var _self = this,
+        markers = _self.get('markers'),
+        markersGroup;
+      if(markers){
+        markersGroup = _self.get('markersGroup');
+        markersGroup.change(markers.items);
+      }
+    },
+    _changeLabels : function(){
+      this.resetLabels();
+    },
+    //删除标记
+    removeMarkers : function(){
+      var _self = this,
+
+        markersGroup = _self.get('markersGroup');
+
+      markersGroup && markersGroup.remove();
+    },
+    //获取激活的属性
+    getActiveAtrrs : function(){
+
+    },
+    //获取解除激活的属性
+    getUnActiveAttrs : function(){
+
+    },
+    /**
+     * @protected
+     * 设置图形的激活状态
+     * @param {Boolean} actived 是否激活
+     */
+    setActiveStatus : function(actived){
+
+    },
+    remove : function(){
+      var _self = this;
+      _self.removeMarkers();
+      _self.removeLabels();
+      Series.superclass.remove.call(this);
+    }
+  });
+
+
+  return Series;
 });
