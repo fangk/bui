@@ -1107,7 +1107,8 @@ define('bui/util',function(require){
              * \u5b50\u7248\u672c\u53f7
              * @type {Number}
              */
-            subVersion : 89,
+            subVersion : 96,
+
 
             /**
              * \u662f\u5426\u4e3a\u51fd\u6570
@@ -2293,7 +2294,12 @@ define('bui/observable',['bui/util'],function (r) {
       var _self = this,
         callbacks = _self._getCallbacks(eventType);
       if(callbacks){
-        callbacks.remove(fn);
+        if(fn){
+          callbacks.remove(fn);
+        }else{
+          callbacks.empty();
+        }
+        
       }
       return _self;
     },
@@ -4932,7 +4938,24 @@ define('bui/component/uibase/align',['bui/ua'],function (require) {
                 /**/
             }
         },
+        __bindUI : function(){
+            var _self = this;
+            
+            _self.on('show',function(){
+                $(window).on('resize',BUI.wrapBehavior(_self,'handleWindowResize'));
+            });
 
+            _self.on('hide',function(){
+                $(window).off('resize',BUI.getWrapBehavior(_self,'handleWindowResize'));
+            });
+        },
+        //\u5904\u7406window resize\u4e8b\u4ef6
+        handleWindowResize : function(){
+            var _self = this,
+                align = _self.get('align');
+
+            _self.set('align',align);
+        },
         /*
          \u5bf9\u9f50 Overlay \u5230 node \u7684 points \u70b9, \u504f\u79fb offset \u5904
          @method
@@ -14971,10 +14994,13 @@ define('bui/overlay/dialog',['bui/overlay/overlay'],function (require) {
     
     show:function(){
       var _self = this;
-
+      align = _self.get('align');
+      
       dialog.superclass.show.call(this);
-      _self.center();
-    },
+      _self.set('align',align);
+      
+      
+    },/**/
     //\u7ed1\u5b9a\u4e8b\u4ef6
     bindUI : function(){
       var _self = this;
@@ -15169,6 +15195,12 @@ define('bui/overlay/dialog',['bui/overlay/overlay'],function (require) {
       title : {
         view:true,
         value : ''
+      },
+      align : {
+        value : {
+          node : window,
+          points : ['cc','cc']
+        }
       },
       mask : {
         value:true
@@ -17458,7 +17490,7 @@ define('bui/picker/mixin', function (require) {
           }
         }
         
-        if(valueField){
+        if(valueField && _self.get('autoSetValue')){
           var preValue = $(valueField).val();  
           if(valueField != preValue){
             $(valueField).val(selValue);
@@ -17538,7 +17570,7 @@ define('bui/picker/mixin', function (require) {
     },
     _uiSetValueField : function(v){
       var _self = this;
-      if(v != null && v !== ''){ //if(v)\u95ee\u9898\u592a\u591a
+      if(v != null && v !== '' && _self.get('autoSetValue')){ //if(v)\u95ee\u9898\u592a\u591a
         _self.setSelectedValue($(v).val());
       }
     },
@@ -18016,6 +18048,7 @@ define('bui/form/basefield',['bui/common','bui/form/tips','bui/form/valid','bui/
     Valid = require('bui/form/valid'),
     Remote = require('bui/form/remote'),
     CLS_FIELD_ERROR = BUI.prefix + 'form-field-error',
+    CLS_TIP_CONTAINER = 'bui-form-tip-container',
     DATA_ERROR = 'data-error';
 
   /**
@@ -18124,7 +18157,9 @@ define('bui/form/basefield',['bui/common','bui/form/tips','bui/form/valid','bui/
       _self.on('afterRenderUI',function(){
         var tip = _self.get('tip');
         if(tip){
-          tip.trigger = _self.getTipTigger();
+          var trigger = _self.getTipTigger();
+          trigger && trigger.parent().addClass(CLS_TIP_CONTAINER);
+          tip.trigger = trigger;
           tip.autoRender = true;
           tip = new TipItem(tip);
           _self.set('tip',tip);
@@ -18899,8 +18934,13 @@ define('bui/form/selectfield',['bui/common','bui/form/basefield'],function (requ
   }
 
   function appendItem(value,text,select){
-     var str = '<option value="' + value +'">'+text+'</option>'
-    $(str).appendTo(select);
+    // var str = '<option value="' + value +'">'+text+'</option>'
+    // $(str).appendTo(select);
+    
+    // \u4e0a\u9762\u90a3\u79cd\u5199\u6cd5\u5728ie6\u4e0b\u4f1a\u62a5\u4e00\u4e2a\u5947\u602a\u7684\u9519\u8bef\uff0c\u4f7f\u7528new Option\u5219\u4e0d\u4f1a\u6709\u8fd9\u4e2a\u95ee\u9898
+    var option = new Option(text, value),
+      options = select[0].options;
+    options[options.length] = option;
   }
   /**
    * \u8868\u5355\u9009\u62e9\u57df
@@ -19097,7 +19137,8 @@ define('bui/form/selectfield',['bui/common','bui/form/basefield'],function (requ
   });
 
   return selectField;
-});/**
+});
+/**
  * @fileOverview \u8868\u5355\u65e5\u5386\u57df
  * @author dxq613@gmail.com
  * @ignore
@@ -21185,8 +21226,8 @@ define('bui/form/group/select',['bui/form/group/base','bui/data'],function (requ
           store.url = url;
         }
         store = new Data.TreeStore(store);
-        _self.set('store',store);
       }
+      _self.set('store',store);
     },
     bindUI : function  () {
       var _self = this;
@@ -22931,9 +22972,8 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
       renderUI : function(){
         var _self = this,
           picker = _self.get('picker'),
-          el = _self.get('el'),
-          textEl = el.find('.' + _self.get('inputCls'));
-        picker.set('trigger',el);
+          textEl = _self._getTextEl();
+        picker.set('trigger',_self.getTrigger());
         picker.set('triggerEvent', _self.get('triggerEvent'));
         picker.set('autoSetValue', _self.get('autoSetValue'));
         picker.set('textField',textEl);
@@ -22971,7 +23011,13 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
 
         return Component.Controller.prototype.containsElement.call(this,elem) || picker.containsElement(elem);
       },
-
+      /**
+       * @protected
+       * \u83b7\u53d6\u89e6\u53d1\u70b9
+       */
+      getTrigger : function(){
+        return this.get('el');
+      },
       //\u8bbe\u7f6e\u5b50\u9879
       _uiSetItems : function(items){
         if(!items){
@@ -23002,13 +23048,17 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
       _uiSetWidth : function(v){
         var _self = this;
         if(v != null){
-          var textEl = _self._getTextEl(),
+          if(_self.get('inputForceFit')){
+            var textEl = _self._getTextEl(),
             iconEl = _self.get('el').find('.x-icon'),
             appendWidth = textEl.outerWidth() - textEl.width(),
-            picker = _self.get('picker'),
+            
             width = v - iconEl.outerWidth() - appendWidth;
-          textEl.width(width);
+            textEl.width(width);
+          }
+          
           if(_self.get('forceFit')){
+            var picker = _self.get('picker');
             picker.set('width',v);
           }
           
@@ -23025,7 +23075,7 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
       _getTextEl : function(){
          var _self = this,
           el = _self.get('el');
-        return el.find('.' + _self.get('inputCls'));
+        return el.is('input') ? el : el.find('input');
       },
       /**
        * \u6790\u6784\u51fd\u6570
@@ -23163,6 +23213,13 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
           value:true
         },
         /**
+         * \u662f\u5426\u8ddfvalueField\u81ea\u52a8\u540c\u6b65
+         * @type {Boolean}
+         */
+        autoSetValue : {
+          value : true
+        },
+        /**
          * \u662f\u5426\u53ef\u4ee5\u591a\u9009
          * @cfg {Boolean} [multipleSelect=false]
          */
@@ -23173,6 +23230,13 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
         multipleSelect:{
           value:false
         },
+        /**
+         * \u5185\u90e8\u7684input\u662f\u5426\u8ddf\u968f\u5bbd\u5ea6\u7684\u53d8\u5316\u800c\u53d8\u5316
+         * @type {Object}
+         */
+        inputForceFit : {
+          value : true
+        },  
         /**
          * \u63a7\u4ef6\u7684name\uff0c\u7528\u4e8e\u5b58\u653e\u9009\u4e2d\u7684\u6587\u672c\uff0c\u4fbf\u4e8e\u8868\u5355\u63d0\u4ea4
          * @cfg {Object} name
@@ -23282,6 +23346,220 @@ define('bui/select/select',['bui/common','bui/picker'],function (require) {
   return select;
 
 });/**
+ * @fileOverview \u8f93\u5165\u3001\u9009\u62e9\u5b8c\u6bd5\u540e\u663e\u793atag
+ * @ignore
+ */
+
+define('bui/select/tag',['bui/common','bui/list'],function (require) {
+  var BUI = require('bui/common'),
+    List = require('bui/list'),
+    KeyCode = BUI.KeyCode,
+    WARN = 'warn';
+
+  /**
+   * @class BUI.Select.Tag
+   * \u663e\u793atag\u7684\u6269\u5c55
+   */
+  var Tag = function(){
+
+  };
+
+  Tag.ATTRS = {
+    /**
+     * \u663e\u793atag
+     * @type {Boolean}
+     */
+    showTag : {
+      value : false
+    },
+    /**
+     * tag\u7684\u6a21\u677f
+     * @type {String}
+     */
+    tagItemTpl : {
+      value : '<li>{value}<button>\u00d7</button></li>'
+    },
+    /**
+     * @private
+     * tag \u7684\u5217\u8868
+     * @type {Object}
+     */
+    tagList : {
+      value : null
+    },
+    tagPlaceholder : {
+      value : '\u8f93\u5165\u6807\u7b7e'
+    },
+    /**
+     * \u9ed8\u8ba4\u7684value\u5206\u9694\u7b26\uff0c\u5c06\u503c\u5206\u5272\u663e\u793a\u6210tag
+     * @type {String}
+     */
+    separator : {
+      value : ';'
+    }
+  };
+
+  BUI.augment(Tag,{
+
+    __renderUI : function(){
+      var _self = this,
+        showTag = _self.get('showTag'),
+        tagPlaceholder = _self.get('tagPlaceholder'),
+        tagInput = _self.getTagInput();
+      if(showTag && !tagInput.attr('placeholder')){
+        tagInput.attr('placeholder',tagPlaceholder);
+        _self.set('inputForceFit',false);
+      }
+    },
+    __bindUI : function(){
+      var _self = this,
+        showTag = _self.get('showTag'),
+        tagInput = _self.getTagInput();
+      if(showTag){
+        tagInput.on('keydown',function(ev){
+          if(!tagInput.val()){
+            var tagList =  _self.get('tagList'),
+              last = tagList.getLastItem(),
+              picker = _self.get('picker');
+            if(ev.which == KeyCode.DELETE || ev.which == KeyCode.BACKSPACE){
+              if(tagList.hasStatus(last,WARN)){
+                _self._delTag(last);
+              }else{
+                tagList.setItemStatus(last,WARN,true);
+              }
+              picker.hide();
+            }else{
+              tagList.setItemStatus(last,WARN,false);
+            }
+          }
+        });
+
+        tagInput.on('change',function(ev){
+          setTimeout(function(){
+            var val = tagInput.val();
+            if(val){
+              _self._addTag(val);
+            }
+          });
+          
+        });
+      }
+    },
+    __syncUI : function(){
+      var _self = this,
+        showTag = _self.get('showTag'),
+        valueField = _self.get('valueField');
+      if(showTag && valueField){
+        _self._setTags($(valueField).val());
+      }
+    },
+    //\u8bbe\u7f6etags\uff0c\u521d\u59cb\u5316\u65f6\u5904\u7406
+    _setTags : function(value){
+      var _self = this,
+        tagList = _self.get('tagList'),
+        separator = _self.get('separator'),
+        values = value.split(separator);
+      if(!tagList){
+        tagList = _self._initTagList();
+      }
+      if(value){
+        BUI.each(values,function(val){
+          tagList.addItem({value : val});
+        });
+      }
+      
+
+    },
+    //\u6dfb\u52a0tag
+    _addTag : function(value){
+      var _self = this,
+        tagList = _self.get('tagList'),
+        tagInput = _self.getTagInput(),
+        preItem = tagList.getItem(value);
+      if(!preItem){
+        tagList.addItem({value : value});
+        _self._synTagsValue();
+      }else{
+        _self._blurItem(tagList,preItem);
+      }
+      tagInput.val('');
+
+    },
+    //\u63d0\u793a\u7528\u6237\u9009\u9879\u5df2\u7ecf\u5b58\u5728
+    _blurItem : function(list,item){
+      list.setItemStatus(item,'active',true);
+      setTimeout(function(){
+        list.setItemStatus(item,'active',false);
+      },400);
+    },
+    //\u5220\u9664tag
+    _delTag : function(item){
+      var _self = this,
+        tagList = _self.get('tagList');
+
+      tagList.removeItem(item);
+      _self._synTagsValue();
+    },
+
+    /**
+     * \u83b7\u53d6tag \u5217\u8868\u7684\u503c
+     * @return {String} \u5217\u8868\u5bf9\u5e94\u7684\u503c
+     */
+    getTagsValue : function(){
+      var _self = this,
+        tagList = _self.get('tagList'),
+        items = tagList.getItems(),
+        vals = [];
+
+      BUI.each(items,function(item){
+        vals.push(item.value);
+      });
+      return vals.join(_self.get('separator'));
+    },
+    //\u521d\u59cb\u5316tagList
+    _initTagList : function(){
+      var _self = this,
+        tagInput = _self.getTagInput(),
+        tagList = new List.SimpleList({
+          elBefore : tagInput,
+          itemTpl : _self.get('tagItemTpl'),
+          idField : 'value'
+        });
+      tagList.render();
+      _self._initTagEvent(tagList);
+      _self.set('tagList',tagList);
+      return tagList;
+    },
+    //\u521d\u59cb\u5316tag\u5220\u9664\u4e8b\u4ef6
+    _initTagEvent : function(list){
+      var _self = this;
+      list.on('itemclick',function(ev){
+        var sender = $(ev.domTarget);
+        if(sender.is('button')){
+          _self._delTag(ev.item);
+        }
+      });
+    },
+    /**
+     * \u83b7\u53d6\u8f93\u5165\u7684\u6587\u672c\u6846
+     * @protected
+     * @return {jQuery} \u8f93\u5165\u6846
+     */
+    getTagInput : function(){
+      var _self = this,
+          el = _self.get('el');
+      return el.is('input') ? el : el.find('input');
+    },
+    _synTagsValue : function(){
+      var _self = this,
+        valueEl = _self.get('valueField');
+       valueEl && $(valueEl).val(_self.getTagsValue());
+    }
+  });
+
+  return Tag;
+});
+/**
  * @fileOverview \u7ec4\u5408\u6846\u53ef\u7528\u4e8e\u9009\u62e9\u8f93\u5165\u6587\u672c
  * @ignore
  */
@@ -23290,6 +23568,7 @@ define('bui/select/combox',['bui/common','bui/select/select'],function (require)
 
   var BUI = require('bui/common'),
     Select = require('bui/select/select'),
+    Tag = require('bui/select/tag'),
     CLS_INPUT = BUI.prefix + 'combox-input';
 
   /**
@@ -23309,12 +23588,13 @@ define('bui/select/combox',['bui/common','bui/select/select'],function (require)
    * @class BUI.Select.Combox
    * @extends BUI.Select.Select
    */
-  var combox = Select.extend({
+  var combox = Select.extend([Tag],{
 
     renderUI : function(){
       var _self = this,
         picker = _self.get('picker');
       picker.set('autoFocused',false);
+
     },
     _uiSetItems : function(v){
       var _self = this;
@@ -23340,6 +23620,17 @@ define('bui/select/combox',['bui/common','bui/select/select'],function (require)
           list.clearItemStatus(item);
         }
       });
+    },
+    //\u8986\u5199\u6b64\u65b9\u6cd5
+    _uiSetValueField : function(){
+
+    },
+    /**
+     * @protected
+     * \u83b7\u53d6\u89e6\u53d1\u70b9
+     */
+    getTrigger : function(){
+      return this._getTextEl();
     }
   },{
     ATTRS : 
@@ -23365,6 +23656,9 @@ define('bui/select/combox',['bui/common','bui/select/select'],function (require)
        */
       inputCls:{
         value:CLS_INPUT
+      },
+      autoSetValue : {
+        value : false
       }
     }
   },{
@@ -23759,12 +24053,12 @@ define('bui/mask/mask',['bui/common'],function (require) {
          * @param {String} [msgCls] \u663e\u793a\u6587\u672c\u5e94\u7528\u7684\u6837\u5f0f
          * <pre><code>
          *   BUI.Mask.maskElement('#domId');
-         *   
+         *   BUI.Mask.maskElement('body'); //\u5c4f\u853d\u6574\u4e2a\u7a97\u53e3
          * </code></pre>
          */
         maskElement:function (element, msg, msgCls) {
             var maskedEl = $(element),
-                maskDiv = $('.' + CLS_MASK, maskedEl),
+                maskDiv = maskedEl.children('.' + CLS_MASK),
                 tpl = null,
                 msgDiv = null,
                 top = null,
@@ -23772,23 +24066,42 @@ define('bui/mask/mask',['bui/common'],function (require) {
             if (!maskDiv.length) {
                 maskDiv = $('<div class="' + CLS_MASK + '"></div>').appendTo(maskedEl);
                 maskedEl.addClass('x-masked-relative x-masked');
-                if (UA.ie === 6) {
-                    maskDiv.height(maskedEl.height());
+                //\u5c4f\u853d\u6574\u4e2a\u7a97\u53e3
+                if(element == 'body'){
+                  if(UA.ie == 6){
+                    maskDiv.height(BUI.docHeight());
+                  }else{
+                    maskDiv.css('position','fixed');
+                  }
+                }else{
+                  if (UA.ie === 6) {
+                      maskDiv.height(maskedEl.height());
+                  }
                 }
+               
                 if (msg) {
                     tpl = ['<div class="' + CLS_MASK_MSG + '"><div>', msg, '</div></div>'].join('');
                     msgDiv = $(tpl).appendTo(maskedEl);
                     if (msgCls) {
                         msgDiv.addClass(msgCls);
                     }
-                    try {
-                        top = (maskedEl.height() - msgDiv.height()) / 2;
-                        left = (maskedEl.width() - msgDiv.width()) / 2;
 
-                        msgDiv.css({ left:left, top:top });
-                    } catch (ex) {
-                        BUI.log('mask error occurred');
+                  try {
+                    //\u5c4f\u853d\u6574\u4e2a\u7a97\u53e3
+                    if(element == 'body' && UA.ie != 6){
+                      top = '50%',
+                      left = '50%';
+                      msgDiv.css('position','fixed');
+                    }else{
+                      top = (maskDiv.height() - msgDiv.height()) / 2;
+                      left = (maskDiv.width() - msgDiv.width()) / 2;                      
                     }
+                    msgDiv.css({ left:left, top:top });
+
+                  } catch (ex) {
+                    BUI.log('mask error occurred');
+                  }
+                    
                 }
             }
             return maskDiv;
@@ -23816,7 +24129,8 @@ define('bui/mask/mask',['bui/common'],function (require) {
     });
     
     return Mask;
-});/**
+});
+/**
  * @fileOverview \u52a0\u8f7d\u6570\u636e\u65f6\u5c4f\u853d\u5c42
  * @ignore
  */
@@ -27718,7 +28032,7 @@ define('bui/calendar/monthpicker',['bui/common','bui/overlay','bui/list','bui/to
       _self.get('el').delegate('a','click',function(ev){
         ev.preventDefault();
       }).delegate('.' + CLS_MONTH,'dblclick',function(){
-        _self.fire('dblclick');
+        _self.fire('monthdblclick');
       });
     }
   },{
@@ -27755,7 +28069,7 @@ define('bui/calendar/monthpicker',['bui/common','bui/overlay','bui/list','bui/to
       });
 
       el.delegate('.' + CLS_YEAR,'dblclick',function(){
-        _self.fire('dblclick');
+        _self.fire('yeardblclick');
       });
 
       el.delegate('.x-icon','click',function(ev){
@@ -27895,7 +28209,7 @@ define('bui/calendar/monthpicker',['bui/common','bui/overlay','bui/list','bui/to
         if(ev.item){
           _self.setInternal('month',ev.item.value);
         }
-      }).on('dblclick',function(){
+      }).on('monthdblclick',function(){
         _self._successCall();
       });
 
@@ -27903,7 +28217,7 @@ define('bui/calendar/monthpicker',['bui/common','bui/overlay','bui/list','bui/to
         if(ev.item){
           _self.setInternal('year',ev.item.value);
         }
-      }).on('dblclick',function(){
+      }).on('yeardblclick',function(){
         _self._successCall();
       });
 
@@ -28707,7 +29021,9 @@ define('bui/calendar/calendar',['bui/picker','bui/calendar/monthpicker','bui/cal
           for(var key in lockTime){
               var noCls = _timePickerEnum[key.toLowerCase()];
               _self.set(key,lockTime[key]);
-              _self.get('el').find("."+noCls).attr("disabled","");
+              if(!lockTime.editable){
+                _self.get('el').find("."+noCls).attr("disabled","");
+              }
           }
       }
       var  picker = new Picker({
@@ -28765,7 +29081,11 @@ define('bui/calendar/calendar',['bui/picker','bui/calendar/monthpicker','bui/cal
         selectedDate = _self.get('selectedDate'),
         date = selectedDate.getDate();
       if(year !== selectedDate.getFullYear() || month !== selectedDate.getMonth()){
-        _self.set('selectedDate',new Date(year,month,date));
+        var newDate = new Date(year,month,date);
+        if(newDate.getMonth() != month){ //\u4e0b\u4e00\u4e2a\u6708\u6ca1\u6709\u5bf9\u5e94\u7684\u65e5\u671f,\u5b9a\u4f4d\u5230\u4e0b\u4e00\u4e2a\u6708\u6700\u540e\u4e00\u5929
+          newDate = DateUtil.addDay(-1,new Date(year,month + 1));
+        }
+        _self.set('selectedDate',newDate);
       }
     },
     //\u521b\u5efa\u9009\u62e9\u6708\u7684\u63a7\u4ef6
@@ -28823,6 +29143,17 @@ define('bui/calendar/calendar',['bui/picker','bui/calendar/monthpicker','bui/cal
               var day = today();
               _self.set('selectedDate',day);
               _self.fire('accept');
+            }
+          }
+        });
+        items.push({
+          xclass:'bar-item-button',
+          text:'\u6e05\u9664',
+          btnCls: 'button button-small',
+          id:'clsBtn',
+          listeners:{
+            click:function(){
+              _self.fire('clear');
             }
           }
         });
@@ -29091,6 +29422,16 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
           autoRender : true
         });
 
+      calendar.on('clear', function(){
+        var curTrigger = _self.get('curTrigger'),
+          oldValue = curTrigger.val();
+
+        if(oldValue){
+          curTrigger.val('');
+          curTrigger.trigger('change');
+        }
+      });
+
       if (!_self.get('dateMask')) {
         if (_self.get('showTime')) {
             _self.set('dateMask', 'yyyy-mm-dd HH:MM:ss');
@@ -29117,13 +29458,24 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
       var _self = this,
         calendar = this.get('calendar'),
         date = DateUtil.parse(val,_self.get("dateMask"));
-      date = date || new Date(new Date().setSeconds(0));
+      date = date || _self.get('selectedDate');
       calendar.set('selectedDate',DateUtil.getDate(date));
+
       if(_self.get('showTime')){
+
           var lockTime = this.get("lockTime"),
-              hour = lockTime&&lockTime['hour']?lockTime['hour']:date.getHours(),
-              minute = lockTime&&lockTime['minute']?lockTime['minute']:date.getMinutes(),
-              second = lockTime&&lockTime['second']?lockTime['second']:date.getSeconds();
+            hour = date.getHours(),
+            minute = date.getMinutes(),
+            second = date.getSeconds();
+
+          if(lockTime){
+            if(!val || !lockTime.editable){
+              hour = lockTime&&lockTime['hour']?lockTime['hour']:hour;
+              minute = lockTime&&lockTime['minute']?lockTime['minute']:minute;
+              second = lockTime&&lockTime['second']?lockTime['second']:second;
+            }
+          }
+
         calendar.set('hour',hour);
         calendar.set('minute',minute);
         calendar.set('second',second);
@@ -29197,7 +29549,7 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
         value:false
       },
        /**
-       * \u9501\u5b9a\u65f6\u95f4\u9009\u62e9
+       * \u9501\u5b9a\u65f6\u95f4\u9009\u62e9\uff0c\u9ed8\u8ba4\u9501\u5b9a\u7684\u65f6\u95f4\u4e0d\u80fd\u4fee\u6539\u53ef\u4ee5\u901a\u8fc7 editable : true \u6765\u5141\u8bb8\u4fee\u6539\u9501\u5b9a\u7684\u65f6\u95f4
        *<pre><code>
        *  var calendar = new Calendar.Calendar({
        *  render:'#calendar',
@@ -29208,6 +29560,7 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
        * @type {Object}
        */
       lockTime :{
+
       },
       /**
        * \u6700\u5927\u65e5\u671f
@@ -29253,7 +29606,7 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
         value:'accept'
       },
       hideEvent:{
-        value:'accept'
+        value:'accept clear'
       },
       /**
        * \u65e5\u5386\u5bf9\u8c61,\u53ef\u4ee5\u8fdb\u884c\u66f4\u591a\u7684\u64cd\u4f5c\uff0c\u53c2\u770b{@link BUI.Calendar.Calendar}
@@ -29261,6 +29614,13 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
        */
       calendar:{
 
+      },
+      /**
+       * \u9ed8\u8ba4\u9009\u4e2d\u7684\u65e5\u671f
+       * @type {Date}
+       */
+      selectedDate: {
+      	value: new Date(new Date().setSeconds(0))
       }
     }
   },{
@@ -29269,7 +29629,8 @@ define('bui/calendar/datepicker',['bui/common','bui/picker','bui/calendar/calend
   });
   return datepicker;
   
-});/**
+});
+/**
  * @fileOverview \u7f16\u8f91\u5668\u547d\u540d\u7a7a\u95f4\u5165\u53e3
  * @ignore
  */
@@ -33010,7 +33371,7 @@ define('bui/grid/format',function (require) {
 ;(function(){
 var BASE = 'bui/grid/plugins/';
 define('bui/grid/plugins',['bui/common',BASE + 'selection',BASE + 'cascade',BASE + 'cellediting',BASE + 'rowediting',BASE + 'autofit',
-	BASE + 'dialogediting',BASE + 'menu',BASE + 'summary',BASE + 'rownumber',BASE + 'columngroup',BASE + 'rowgroup'],function (r) {
+	BASE + 'dialogediting',BASE + 'menu',BASE + 'summary',BASE + 'rownumber',BASE + 'columngroup',BASE + 'rowgroup',BASE + 'columnresize'],function (r) {
 	var BUI = r('bui/common'),
 		Selection = r(BASE + 'selection'),
 
@@ -33028,7 +33389,8 @@ define('bui/grid/plugins',['bui/common',BASE + 'selection',BASE + 'cascade',BASE
 			Summary : r(BASE + 'summary'),
 			RowNumber : r(BASE + 'rownumber'),
 			ColumnGroup : r(BASE + 'columngroup'),
-			RowGroup : r(BASE + 'rowgroup')
+			RowGroup : r(BASE + 'rowgroup'),
+			ColumnResize : r(BASE + 'columnresize')
 		});
 		
 	return Plugins;
@@ -34371,6 +34733,13 @@ define('bui/grid/plugins/editing',function (require) {
      * editor \u521b\u5efa\u5b8c\u6210\uff0c\u56e0\u4e3aeditor\u5ef6\u8fdf\u521b\u5efa\uff0c\u6240\u4ee5\u521b\u5efa\u5b8c\u6210grid\uff0c\u7b49\u5f85editor\u521b\u5efa\u6210\u529f
      */
     
+    /**
+     * @event beforeeditorshow
+     * editor\u663e\u793a\u524d\uff0c\u53ef\u4ee5\u66f4\u6539editor\u7684\u4e00\u4e9b\u5c5e\u6027
+     * @param {Object} ev \u4e8b\u4ef6\u5bf9\u8c61
+     * @param {Object} ev.record \u7f16\u8f91\u7684\u6570\u636e
+     * @param {BUI.Editor.Editor} ev.editor \u7f16\u8f91\u5668
+     */
 
   };
 
@@ -34627,6 +34996,8 @@ define('bui/grid/plugins/editing',function (require) {
 
       _self.beforeShowEditor(editor,options);
       _self.set('record',options.record);
+      _self.fire('beforeeditorshow',{editor : editor,record : options.record});
+
       editor.setValue(value);
       if(alignNode){
         var align = _self.get('align');
@@ -34637,7 +35008,7 @@ define('bui/grid/plugins/editing',function (require) {
       editor.show();
       _self.focusEditor(editor,options.field);
       _self.set('curEditor',editor);
-      _self.fire('editorshow',{editor : editor});
+      _self.fire('editorshow',{editor : editor,record : options.record});
     },
     /**
      * @protected
@@ -34796,7 +35167,7 @@ define('bui/grid/plugins/editing',function (require) {
         editors = _self.get('editors');
       
       BUI.each(editors,function(editor){
-        editor.destroy || editor.destroy();
+        editor.destroy && editor.destroy();
       });
       _self.off();
       _self.clearAttrVals();
@@ -35660,6 +36031,16 @@ define('bui/grid/plugins/dialogediting',['bui/common'],function (require) {
     groups : {
       shared : false,
       value : []
+    },
+    /**
+     * \u6e32\u67d3\u5206\u7ec4\u5185\u5bb9\uff0c\u51fd\u6570\u539f\u578b function(text,group){}
+     *
+     *  - text \u662f\u5206\u7ec4\u5b57\u6bb5\u683c\u5f0f\u5316\u540e\u7684\u6587\u672c
+     *  - group \u662f\u5f53\u524d\u5206\u7ec4\uff0c\u5305\u62ec,text(\u6587\u672c\uff09,value\uff08\u503c\uff09,items\uff08\u5206\u7ec4\u5305\u542b\u7684\u9879\uff09
+     * @type {Function}
+     */
+    renderer : {
+
     }
   };
 
@@ -35693,18 +36074,19 @@ define('bui/grid/plugins/dialogediting',['bui/common'],function (require) {
               text;
             if(!last || value != last.value){
               text = renderer ? renderer(value,item) : value;
-              last = newGroup(value,text);
-              last.begin = index;
-
-              _self._createGroup(last,item);
-              groups.push(last);
-            }
-            if(last){
-              last.items.push(item);
+              var current = newGroup(value,text);
+              current.begin = index;
+              groups.push(current);
+              last && _self._createGroup(last);
+              last = current;
             }
             
+            last.items.push(item);
+            
+            
           });
-
+          var last = groups[groups.length - 1];
+          last && _self._createGroup(last);
           _self.set('groups',groups);
         }
         
@@ -35743,12 +36125,15 @@ define('bui/grid/plugins/dialogediting',['bui/common'],function (require) {
         groupEl = el.closest('.' + CLS_GROUP);
       return groupEl.data(DATA_GROUP);
     },
-    _createGroup : function (group,item) {
+    _createGroup : function (group) {
       var _self = this,
         grid = _self.get('grid'),
+        item = group.items[0],
         firstEl = grid.findElement(item),
         count = grid.get('columns').length,
-        tpl = '<tr class="'+CLS_GROUP+'"><td colspan="' + count + '"><div class="bui-grid-cell-inner"><span class="bui-grid-cell-text"><span class="bui-grid-cascade"><i class="bui-grid-cascade-icon"></i></span> ' + group.text + '</span></div></td></tr>',
+        renderer = _self.get('renderer'),
+        text = renderer ? renderer(group.text,group) : group.text,
+        tpl = '<tr class="'+CLS_GROUP+'"><td colspan="' + (count + 1) + '"><div class="bui-grid-cell-inner"><span class="bui-grid-cell-text"><span class="bui-grid-cascade"><i class="bui-grid-cascade-icon"></i></span> ' + text + '</span></div></td></tr>',
         node = $(tpl).insertBefore(firstEl);
       node.data(DATA_GROUP,group);
     },
@@ -35787,6 +36172,217 @@ define('bui/grid/plugins/dialogediting',['bui/common'],function (require) {
 
   return Group;
 
+});/**
+ * @fileOverview \u62d6\u62fd\u6539\u53d8\u5217\u7684\u5bbd\u5ea6
+ * @ignore
+ */
+
+define('bui/grid/plugins/columnresize',function (require) {
+  
+
+  var BUI = require('bui/common'),
+    NUM_DIS = 15,
+    NUM_MIN = 30,
+    STYLE_CURSOR = 'col-resize';
+
+  var Resize = function(cfg){
+    Resize.superclass.constructor.call(this,cfg);
+  };
+
+  Resize.ATTRS = {
+    /**
+     * @private
+     * \u662f\u5426\u6b63\u5728\u62d6\u62fd
+     * @type {Boolean}
+     */
+    resizing : {
+      value : false
+    },
+    //\u62d6\u62fd\u5c5e\u6027
+    draging : {
+
+    }
+  };
+
+  BUI.extend(Resize,BUI.Base);
+
+  BUI.augment(Resize,{
+
+    renderUI : function(grid){
+      this.set('grid',grid);
+    },
+
+    bindUI : function(grid){
+      var _self = this,
+        header = grid.get('header'),
+        curCol,
+        preCol,
+        direction;
+
+      header.get('el').delegate('.bui-grid-hd','mouseenter',function(ev){
+        var resizing = _self.get('resizing');
+        if(!resizing){
+          var sender = ev.currentTarget;
+          curCol = _self._getColumn(sender);
+          preCol = _self._getPreCol(curCol);
+        }
+      }).delegate('.bui-grid-hd','mouseleave',function(ev){
+        var resizing = _self.get('resizing');
+        if(!resizing && curCol){
+          curCol.get('el').css('cursor','');
+          curCol = null; 
+        }
+      }).delegate('.bui-grid-hd','mousemove',function(ev){
+        var resizing = _self.get('resizing');
+
+        if(!resizing && curCol){
+          var el = curCol.get('el'),
+            pageX = ev.pageX,
+            offset = el.offset(),
+            left = offset.left,
+            width = el.width();
+            
+          if(pageX - left < NUM_DIS && preCol){
+            el.css('cursor',STYLE_CURSOR);
+            direction = -1;
+          }else if((left + width) - pageX < NUM_DIS){
+            direction = 1;
+            el.css('cursor',STYLE_CURSOR);
+          }else{
+            curCol.get('el').css('cursor','');
+          }
+        }
+
+        if(resizing){
+          ev.preventDefault();
+          var draging = _self.get('draging'),
+            start = draging.start,
+            pageX = ev.pageX,
+            dif = pageX - start,
+            width = direction > 0 ? curCol.get('width') : preCol.get('width'),
+            toWidth = width + dif;
+          if(toWidth > NUM_MIN && toWidth < grid.get('el').width()){
+            draging.end = pageX;
+            _self.moveDrag(pageX);
+          }
+        }
+
+      }).delegate('.bui-grid-hd','mousedown',function(ev){
+        var resizing = _self.get('resizing');
+        if(!resizing && curCol && curCol.get('el').css('cursor') == STYLE_CURSOR){
+          ev.preventDefault();
+          _self.showDrag(ev.pageX);
+          bindDraging();
+        }
+      });
+
+      function callback(ev){
+        var draging = _self.get('draging')
+        if(curCol && draging){
+          var col = direction > 0 ? curCol : preCol,
+            width = col.get('width'),
+            dif = draging.end - draging.start;
+
+          _self.hideDrag();
+          if(grid.get('forceFit')){
+            var originWidth = col.get('originWidth'),
+              factor = width / originWidth,
+              toWidth = (width + dif) / factor;
+           // console.log(originWidth + ' ,'+width);
+            col.set('originWidth',toWidth);
+            col.set('width',toWidth);
+            //
+
+          }else{
+            col.set('width',width + dif);
+          }
+          
+        }    
+        $(document).off('mouseup',callback);
+      }
+
+      function bindDraging(){
+        $(document).on('mouseup',callback);
+      }
+
+    },
+    //\u663e\u793a\u62d6\u62fd
+    showDrag : function(pageX){
+      var _self = this,
+        grid = _self.get('grid'),
+        header = grid.get('header'),
+        bodyEl = grid.get('el').find('.bui-grid-body'),
+        height = header.get('el').height() + bodyEl.height(),
+        offset = header.get('el').offset(),
+        dragEl = _self.get('dragEl');
+
+      if(!dragEl){
+        var  tpl = '<div class="bui-drag-line"></div>';
+        dragEl = $(tpl).appendTo('body');
+        _self.set('dragEl',dragEl);
+      }
+
+      dragEl.css({
+        top: offset.top,
+        left: pageX,
+        height : height
+      });
+
+      _self.set('resizing',true);
+
+      _self.set('draging',{
+        start : pageX,
+        end : pageX
+      });
+      dragEl.show();
+    },
+    //\u5173\u95ed\u62d6\u62fd
+    hideDrag : function(){
+      var _self = this,
+        dragEl = _self.get('dragEl');
+      dragEl && dragEl.hide();
+      _self.set('draging',null);
+      _self.set('resizing',false);
+    },
+    //\u79fb\u52a8drag
+    moveDrag : function(pageX){
+      var _self = this,
+        dragEl = _self.get('dragEl');
+      dragEl && dragEl.css('left',pageX);
+    },
+    //\u83b7\u53d6\u70b9\u51fb\u7684\u5217
+    _getColumn : function(element){
+      var _self = this,
+        columns = _self.get('grid').get('columns'),
+        rst = null;
+      BUI.each(columns,function(column){
+        if(column.containsElement(element)){
+          rst = column;
+          return false;
+        }
+      });
+
+      return rst;
+    },
+    //\u83b7\u53d6\u524d\u4e00\u4e2a\u5217
+    _getPreCol : function(col){
+      var _self = this,
+        columns = _self.get('grid').get('columns'),
+        rst = null;
+      BUI.each(columns,function(column,index){
+        if(column == col){
+          return false;
+        }else if(column.get('visible')){
+          rst = column;
+        }
+        
+      });
+
+      return rst;
+    }
+  });
+
+  return Resize;
 });/**
  * @fileOverview \u9009\u62e9\u6846\u547d\u540d\u7a7a\u95f4\u5165\u53e3\u6587\u4ef6
  * @ignore
